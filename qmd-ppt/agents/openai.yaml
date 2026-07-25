@@ -1,0 +1,4 @@
+interface:
+  display_name: "QMD 研究型 PPT"
+  short_description: "将 QMD 研究内容转成可编辑的证券研究风格 PPTX"
+  default_prompt: "Use $qmd-ppt to turn this research outline into an editable securities-research PPTX."

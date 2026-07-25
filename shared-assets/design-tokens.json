@@ -1,0 +1,117 @@
+{
+  "version": 2,
+  "ppt": {
+    "canvas": {"ratio": "16:9", "width_in": 13.333333, "height_in": 7.5},
+    "default_font_profile": "preview",
+    "font_profiles": {
+      "preview": {
+        "note": "项目内置 Noto 字体，用于跨机器、可重复的 LibreOffice 视觉质检",
+        "zh": "Noto Sans CJK SC",
+        "latin": "Noto Sans CJK SC",
+        "display_zh": "Noto Sans CJK SC",
+        "bundled_files": ["fonts/NotoSansCJKsc-Regular.otf"],
+        "required_system_fonts": []
+      },
+      "delivery": {
+        "note": "目标交付字体；只有本机精确安装全部字体时才能声明完成视觉验收",
+        "zh": "MiSans",
+        "latin": "Arial",
+        "display_zh": "方正兰亭粗黑简体",
+        "bundled_files": [],
+        "required_system_fonts": ["MiSans", "Arial", "方正兰亭粗黑简体"]
+      }
+    },
+    "colors": {
+      "primary": "#B52116",
+      "emphasis": "#D93630",
+      "dark_red": "#C00000",
+      "text": "#333333",
+      "secondary_text": "#666666",
+      "background": "#FFFFFF",
+      "pale_red": "#FFF5F5",
+      "border_red": "#F0D0D0"
+    },
+    "font_sizes_note": "字号按研究报告/咨询风格的信息密度设定（2026-07-17 与用户确认），不继承培训稿的演讲级大字号；培训稿只贡献色彩与字体品牌层",
+    "font_sizes_pt": {
+      "closing": 36,
+      "cover_title": 32,
+      "cover_subtitle": 18,
+      "section_title": 26,
+      "slide_title": 20,
+      "cover_meta": 12,
+      "key_claim": 14,
+      "key_claim_emphasis": 15,
+      "module_title": 12,
+      "body": 11,
+      "compact_label": 10,
+      "timeline_label": 9,
+      "source_footnote": 9,
+      "minimum": 9
+    },
+    "render_timeout_seconds": 180,
+    "logo_slot": {
+      "enabled": false,
+      "visible_placeholder": false,
+      "x_pt": 32.4,
+      "y_pt": 14.4,
+      "width_pt": 104.4,
+      "height_pt": 37.44,
+      "content_top_min_pt": 61.2,
+      "anchor_name": "LOGO_SAFE_ZONE"
+    }
+  },
+  "word": {
+    "page": {"size": "A4", "width_mm": 210, "height_mm": 297},
+    "margins_mm": {"top": 31, "right": 12, "bottom": 16, "left": 12},
+    "default_font_profile": "preview",
+    "font_profiles": {
+      "preview": {
+        "note": "项目内置 Noto 字体，保证本机 LibreOffice 渲染质检不丢中文字形",
+        "body_zh": "Noto Serif CJK SC",
+        "heading_zh": "Noto Sans CJK SC",
+        "body_latin": "Noto Serif CJK SC",
+        "heading_latin": "Noto Sans CJK SC",
+        "bundled_files": ["fonts/NotoSansCJKsc-Regular.otf", "fonts/NotoSerifCJKsc-Regular.otf"],
+        "required_system_fonts": []
+      },
+      "delivery": {
+        "note": "交付给 Windows/Microsoft Word 环境时使用，贴近参考研报风格",
+        "body_zh": "KaiTi",
+        "heading_zh": "Microsoft YaHei",
+        "body_latin": "Times New Roman",
+        "heading_latin": "Arial",
+        "bundled_files": [],
+        "required_system_fonts": ["KaiTi", "Microsoft YaHei", "Times New Roman", "Arial"]
+      }
+    },
+    "colors": {
+      "primary": "#004A70",
+      "table_header": "#2F75B5",
+      "table_header_text": "#FFFFFF",
+      "text": "#000000",
+      "secondary_text": "#666666",
+      "background": "#FFFFFF",
+      "chart_grid": "#D9E2F3",
+      "chart_series": ["#004A70", "#2F75B5", "#7F8C8D", "#5B9BD5", "#A5A5A5"]
+    },
+    "font_sizes_pt": {"cover_title": 18, "heading_1": 14, "heading_2": 12, "body": 10.5, "caption": 9, "source_note": 7.5},
+    "body_first_line_indent_chars": 2,
+    "line_spacing_pt": 15.75,
+    "space_after_pt": 3,
+    "header_distance_mm": 8,
+    "footer_distance_mm": 8,
+    "style_spacing_pt": {
+      "Title": {"before": 0, "after": 18},
+      "Heading 1": {"before": 18, "after": 8},
+      "Heading 2": {"before": 12, "after": 6},
+      "Heading 3": {"before": 8, "after": 4},
+      "Exhibit Title": {"before": 6, "after": 3},
+      "Source Note": {"before": 6, "after": 3},
+      "Appendix Heading": {"before": 6, "after": 3},
+      "Directory Heading": {"before": 6, "after": 3}
+    },
+    "image_line_spacing_multiple": 1.0,
+    "render_timeout_seconds": 60,
+    "logo_slot": {"enabled": false, "visible_placeholder": false, "x_mm": 12, "y_mm": 8, "width_mm": 45, "height_mm": 10}
+  }
+}

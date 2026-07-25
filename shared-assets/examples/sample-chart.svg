@@ -1,0 +1,10 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="900" height="420" viewBox="0 0 900 420">
+  <rect width="900" height="420" fill="#ffffff"/>
+  <line x1="80" y1="350" x2="850" y2="350" stroke="#999999"/>
+  <line x1="80" y1="50" x2="80" y2="350" stroke="#999999"/>
+  <polyline points="80,330 180,300 280,310 380,250 480,220 580,235 680,165 780,120 850,90" fill="none" stroke="#B52116" stroke-width="6"/>
+  <polyline points="80,330 180,315 280,295 380,280 480,260 580,250 680,230 780,210 850,190" fill="none" stroke="#888888" stroke-width="4"/>
+  <text x="80" y="32" font-family="Arial" font-size="22" fill="#333333">模拟组合净值（仅作演示）</text>
+  <text x="740" y="82" font-family="Arial" font-size="18" fill="#B52116">策略</text>
+  <text x="740" y="185" font-family="Arial" font-size="18" fill="#666666">基准</text>
+</svg>

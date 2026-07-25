@@ -1,0 +1,4 @@
+interface:
+  display_name: "MD 研究报告 Word"
+  short_description: "将研究型 Markdown 转成固定版式的可编辑 Word 报告"
+  default_prompt: "Use $md-word to convert this research Markdown into a formatted Word report with editable equations."

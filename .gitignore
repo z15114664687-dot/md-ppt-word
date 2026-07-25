@@ -1,0 +1,19 @@
+__pycache__/
+*.pyc
+.env
+.DS_Store
+# Office 打开文档时生成的锁/所有者临时文件
+~$*
+.pytest_cache/
+.mypy_cache/
+.venv/
+node_modules/
+coverage/
+.playwright-cli/
+output/
+tmp/
+# ppt-master 运行时迭代快照与被最终版取代的导出（成稿保留在 svg_final/ 与最新 exports/）
+projects/*/backup/
+projects/agent_workflow_share_ppt169_20260718/exports/agent_workflow_share_20260718_183807.pptx
+projects/agent_workflow_share_ppt169_20260718/exports/agent_workflow_share_20260718_184449.pptx
+projects/agent_workflow_share_ppt169_20260718/exports/agent_workflow_share_20260718_184750.pptx
