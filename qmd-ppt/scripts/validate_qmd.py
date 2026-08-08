@@ -29,6 +29,9 @@ DIV_CLOSE = re.compile(r"^(:{3,})\s*$")
 TABLE_ROW = re.compile(r"^\s*\|.*\|\s*$")
 BULLET = re.compile(r"(?m)^\s*(?:[-*+] |\d+[.)]\s+)")
 INLINE_SHRINK = re.compile(r"font-size|\.smaller\b|\\(?:small|footnotesize|scriptsize|tiny)\b")
+DATA = re.compile(r"\d+(?:\.\d+)?\s*(?:%|亿元|亿|万|倍|bps?(?![A-Za-z0-9_]))", re.IGNORECASE)
+CARD_OPEN = re.compile(r"^[ \t]{0,3}(`{3,})\{=ppt-(kpi|takeaway|cards|flow|compare)\}[ \t]*$")
+CARD_SOURCE = re.compile(r"(?mi)^[ \t]*(?:(?:资料)?来源|source)[ \t]*[：:][ \t]*\S")
 
 
 def _strip_fenced_code(text: str) -> str:
@@ -67,6 +70,58 @@ def _slides(body: str) -> list[tuple[str, str]]:
         (match.group(1).strip(), body[match.end() : headings[index + 1].start() if index + 1 < len(headings) else len(body)])
         for index, match in enumerate(headings)
     ]
+
+
+def _raw_slide_contents(body: str, stripped_body: str) -> list[str]:
+    """Slice raw slide bodies using headings found outside fenced blocks."""
+    raw_lines = body.splitlines(keepends=True)
+    heading_lines = [
+        index for index, line in enumerate(stripped_body.splitlines()) if SLIDE_HEADING.fullmatch(line)
+    ]
+    return [
+        "".join(raw_lines[index + 1 : heading_lines[position + 1] if position + 1 < len(heading_lines) else len(raw_lines)])
+        for position, index in enumerate(heading_lines)
+    ]
+
+
+def split_slides(body: str) -> list[tuple[str, str, str]]:
+    """Return title, checkable content, and raw content for each real slide."""
+    stripped_body = _strip_fenced_code(body)
+    slides = _slides(stripped_body)
+    raw_contents = _raw_slide_contents(body, stripped_body)
+    return [(title, content, raw) for (title, content), raw in zip(slides, raw_contents)]
+
+
+def extract_card_blocks(text: str) -> list[tuple[str, str]]:
+    """Return real ppt card blocks while ignoring examples in outer fences."""
+    lines = text.splitlines()
+    blocks: list[tuple[str, str]] = []
+    index = 0
+    while index < len(lines):
+        card_match = CARD_OPEN.match(lines[index])
+        if card_match:
+            fence, kind = card_match.groups()
+            start = index + 1
+            index = start
+            while index < len(lines) and not re.match(
+                rf"^[ \t]{{0,3}}{re.escape(fence[0])}{{{len(fence)},}}[ \t]*$", lines[index]
+            ):
+                index += 1
+            if index < len(lines):
+                blocks.append((kind, "\n".join(lines[start:index])))
+            index += 1
+            continue
+
+        fence_match = FENCE_START.match(lines[index])
+        if fence_match:
+            fence = fence_match.group(1)
+            index += 1
+            while index < len(lines) and not re.match(
+                rf"^[ \t]{{0,3}}{re.escape(fence[0])}{{{len(fence)},}}[ \t]*$", lines[index]
+            ):
+                index += 1
+        index += 1
+    return blocks
 
 
 def _div_spans(lines: list[str]) -> list[tuple[str, int, int]]:
@@ -168,12 +223,13 @@ def validate(path: Path) -> dict[str, object]:
     if not _format_is_pptx(frontmatter):
         errors.append("format 必须为 pptx")
 
-    slides = _slides(_strip_fenced_code(body))
-    raw_content = {title: content for title, content in _slides(body)}
+    slides = split_slides(body)
     if not slides:
         errors.append("至少需要一个二级标题（##）作为内容页")
 
-    for number, (title, content) in enumerate(slides, 1):
+    seen_titles: set[str] = set()
+    card_titles: set[str] = set()
+    for number, (title, content, raw_slide_content) in enumerate(slides, 1):
         # A `#` level-1 heading starts the next section — it is not part of this
         # `##` slide's body. Cut it off so section headers after a table/columns
         # page don't get mis-flagged as "content after columns".
@@ -190,16 +246,27 @@ def validate(path: Path) -> dict[str, object]:
             errors.append(f"第 {number} 页“{title}”正文超过 1200 个字符，应删减或拆页")
         if title in {"分析", "现状", "结论", "研究", "背景"}:
             warnings.append(f"第 {number} 页标题“{title}”不是结论式标题")
+        card_blocks = extract_card_blocks(raw_slide_content)
+        if title in seen_titles and (card_blocks or title in card_titles):
+            errors.append(f"第 {number} 页标题“{title}”与前页重复，无法唯一匹配卡片")
+        seen_titles.add(title)
+        if card_blocks:
+            card_titles.add(title)
+        has_card_source = any(CARD_SOURCE.search(block) for _, block in card_blocks)
         has_exhibit = bool(IMAGE.search(content) or re.search(r"(?m)^\s*\|.*\|\s*$", content))
-        has_data = bool(re.search(r"\d+(?:\.\d+)?\s*(?:%|亿元|亿|万|倍|bp|bps)\b", content, re.IGNORECASE))
-        if (has_exhibit or has_data) and not SOURCE.search(content):
+        # Keep bp/bps from matching longer ASCII units such as 120bpm, while
+        # still allowing the unit to touch Chinese prose (for example 25bps上升).
+        has_data = bool(DATA.search(content))
+        if (has_exhibit or has_data) and not (SOURCE.search(content) or has_card_source):
             errors.append(f"第 {number} 页“{title}”包含图表或数据但缺少来源")
+        if any(DATA.search(block) and not CARD_SOURCE.search(block) for _, block in card_blocks):
+            errors.append(f"第 {number} 页“{title}”卡片包含数据但缺少来源")
         for resource in IMAGE.findall(content):
             if re.match(r"https?://", resource):
                 continue
             if not (path.parent / resource).exists():
                 errors.append(f"第 {number} 页图片不存在：{resource}")
-        has_card = bool(re.search(r"```\{=ppt-(?:kpi|takeaway|cards|flow|compare)\}", raw_content.get(title, "")))
+        has_card = bool(card_blocks)
         layout_errors, layout_warnings = _layout_findings(number, title, content, has_card)
         errors.extend(layout_errors)
         warnings.extend(layout_warnings)

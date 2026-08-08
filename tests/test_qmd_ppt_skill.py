@@ -160,6 +160,165 @@ format: html
         self.assertIn("format 必须为 pptx", joined)
         self.assertIn("9 个列表项", joined)
 
+    def test_validator_requires_source_on_percentage_only_slide(self):
+        """A slide whose only data is percentages still needs a 来源 line.
+
+        Regression: the has_data pattern used to end in `\\b`, which can never
+        hold after `%` (a percentage is always followed by 、。， space or
+        end-of-line, all non-word). Percentage-only slides therefore skipped
+        the source check entirely — the most common case in a research deck.
+        """
+        validator = load_validator()
+        qmd = """---
+title: 百分比数据页
+format: pptx
+---
+
+## 毛利率连续两个季度改善
+
+- 毛利率由 14.1% 改善到 18.7%
+- 收入同比由 -8.2% 转正至 +6.4%
+"""
+        with tempfile.TemporaryDirectory() as tmp:
+            path = Path(tmp) / "deck.qmd"
+            path.write_text(qmd, encoding="utf-8")
+            result = validator.validate(path)
+        self.assertIn("缺少来源", "\n".join(result["errors"]))
+
+    def test_validator_requires_source_inside_percentage_card(self):
+        validator = load_validator()
+        cases = (("", True), ("来源：Wind，作者测算", False))
+        for source_line, should_error in cases:
+            with self.subTest(source_line=source_line), tempfile.TemporaryDirectory() as tmp:
+                path = Path(tmp) / "deck.qmd"
+                path.write_text(
+                    f"""---
+title: 卡片数据页
+format: pptx
+---
+
+## 组合三年表现一览
+
+```{{=ppt-kpi}}
+9.8% | 年化收益
+55.2% | 最大回撤
+{source_line}
+```
+""",
+                    encoding="utf-8",
+                )
+                result = validator.validate(path)
+            joined = "\n".join(result["errors"])
+            if should_error:
+                self.assertIn("缺少来源", joined)
+            else:
+                self.assertNotIn("缺少来源", joined)
+
+    def test_validator_requires_card_source_on_its_own_line(self):
+        validator = load_validator()
+        qmd = """---
+title: 卡片来源行
+format: pptx
+---
+
+## 组合收益仍需补齐可核验来源
+
+```{=ppt-kpi}
+9.8% | 年化收益，来源：待补
+```
+"""
+        with tempfile.TemporaryDirectory() as tmp:
+            path = Path(tmp) / "deck.qmd"
+            path.write_text(qmd, encoding="utf-8")
+            result = validator.validate(path)
+        self.assertIn("缺少来源", "\n".join(result["errors"]))
+
+    def test_validator_rejects_empty_card_source_line(self):
+        validator = load_validator()
+        qmd = """---
+title: 空来源行
+format: pptx
+---
+
+## 卡片数据需要非空来源
+
+```{=ppt-kpi}
+9.8% | 年化收益
+来源：
+备注 | 待补
+```
+"""
+        with tempfile.TemporaryDirectory() as tmp:
+            path = Path(tmp) / "deck.qmd"
+            path.write_text(qmd, encoding="utf-8")
+            result = validator.validate(path)
+        self.assertIn("缺少来源", "\n".join(result["errors"]))
+
+    def test_validator_keeps_raw_cards_separate_on_duplicate_titles(self):
+        validator = load_validator()
+        qmd = """---
+title: 同名页数据归属
+format: pptx
+---
+
+## 组合表现一览
+
+```{=ppt-kpi}
+9.8% | 年化收益
+```
+
+## 组合表现一览
+
+```{=ppt-kpi}
+8.1% | 年化收益
+来源：Wind，作者测算
+```
+"""
+        with tempfile.TemporaryDirectory() as tmp:
+            path = Path(tmp) / "deck.qmd"
+            path.write_text(qmd, encoding="utf-8")
+            result = validator.validate(path)
+        self.assertIn("第 1 页“组合表现一览”卡片包含数据但缺少来源", result["errors"])
+        self.assertIn("第 2 页标题“组合表现一览”与前页重复，无法唯一匹配卡片", result["errors"])
+
+    def test_validator_does_not_read_bpm_as_basis_points(self):
+        """The ASCII suffix guard keeps 120bpm from becoming 120bp."""
+        validator = load_validator()
+        qmd = """---
+title: 非金融单位
+format: pptx
+---
+
+## 静息心率维持在正常区间
+
+- 静息心率 120bpm 属于正常范围
+"""
+        with tempfile.TemporaryDirectory() as tmp:
+            path = Path(tmp) / "deck.qmd"
+            path.write_text(qmd, encoding="utf-8")
+            result = validator.validate(path)
+        self.assertEqual(result["errors"], [])
+
+    def test_validator_requires_source_on_basis_points_followed_by_chinese(self):
+        validator = load_validator()
+        for value in ("5bp回落", "25bps上升"):
+            with self.subTest(value=value), tempfile.TemporaryDirectory() as tmp:
+                path = Path(tmp) / "deck.qmd"
+                path.write_text(
+                    f"""---
+title: 基点数据页
+format: pptx
+---
+
+## 利差变化需要来源验证
+
+- 利差{value}
+""",
+                    encoding="utf-8",
+                )
+                result = validator.validate(path)
+            self.assertIn("缺少来源", "\n".join(result["errors"]))
+
     def test_validator_ignores_slide_markers_inside_fenced_code(self):
         validator = load_validator()
         qmd = """---
@@ -179,6 +338,73 @@ print("hello")
             path.write_text(qmd, encoding="utf-8")
             result = validator.validate(path)
         self.assertEqual(result["slides"], 1)
+
+    def test_validator_ignores_card_examples_inside_longer_fence(self):
+        validator = load_validator()
+        qmd = """---
+title: 卡片语法示例
+format: pptx
+---
+
+## 以下代码只用于说明卡片语法
+
+````markdown
+## 这是文档中的伪幻灯片标题
+```{=ppt-kpi}
+9.8% | 年化收益
+```
+````
+"""
+        with tempfile.TemporaryDirectory() as tmp:
+            path = Path(tmp) / "deck.qmd"
+            path.write_text(qmd, encoding="utf-8")
+            result = validator.validate(path)
+        self.assertNotIn("缺少来源", "\n".join(result["errors"]))
+
+    def test_card_parser_ignores_examples_inside_longer_fence(self):
+        injector = load_qmd_script("inject_cards")
+        qmd = """---
+title: 卡片语法示例
+format: pptx
+---
+
+## 以下代码只用于说明卡片语法
+
+````markdown
+## 这是文档中的伪幻灯片标题
+```{=ppt-kpi}
+9.8% | 年化收益
+```
+````
+"""
+        with tempfile.TemporaryDirectory() as tmp:
+            path = Path(tmp) / "deck.qmd"
+            path.write_text(qmd, encoding="utf-8")
+            cards = injector.parse_cards(path)
+        self.assertEqual(cards, {})
+
+    def test_takeaway_parser_separates_source_line(self):
+        injector = load_qmd_script("inject_cards")
+        qmd = """---
+title: 结论条来源
+format: pptx
+---
+
+## 三重信号同向才能确认拐点
+
+```{=ppt-takeaway}
+供需、盈利、估值同向才能写成结论
+来源：Wind，公司公告
+```
+"""
+        with tempfile.TemporaryDirectory() as tmp:
+            path = Path(tmp) / "deck.qmd"
+            path.write_text(qmd, encoding="utf-8")
+            cards = injector.parse_cards(path)
+        self.assertEqual(
+            cards["三重信号同向才能确认拐点"]["takeaway"],
+            [("供需、盈利、估值同向才能写成结论", "Wind，公司公告")],
+        )
 
 
 class ReferencePptxTests(unittest.TestCase):
@@ -318,6 +544,7 @@ class EndToEndRenderTests(unittest.TestCase):
             inspection = load_qmd_script("inspect_pptx").inspect(output, "preview")
         self.assertGreaterEqual(len(slides), 2)
         self.assertIn("三年次新股策略研究", slide_xml)
+        self.assertIn("takeaway-source", slide_xml)
         self.assertIn("Noto Sans CJK SC", theme)
         self.assertEqual(inspection["errors"], [])
 

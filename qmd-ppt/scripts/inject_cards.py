@@ -11,6 +11,7 @@ Card markers (fenced raw blocks — Pandoc drops them for the pptx target):
 
     ```{=ppt-takeaway}
     一句结论
+    来源：Wind，作者整理
     ```
 
     ```{=ppt-kpi}
@@ -46,6 +47,8 @@ import zipfile
 from pathlib import Path
 from xml.sax.saxutils import escape
 
+from validate_qmd import extract_card_blocks, split_slides
+
 ROOT = Path(__file__).resolve().parents[2]
 TOKENS_PATH = ROOT / "shared-assets" / "design-tokens.json"
 
@@ -57,12 +60,7 @@ ET.register_namespace("p", P_NS)
 ET.register_namespace("r", R_NS)
 
 EMU_PER_INCH = 914400
-SLIDE_HEADING = re.compile(r"(?m)^##\s+(.+?)\s*$")
-TAKEAWAY = re.compile(r"```\{=ppt-takeaway\}[ \t]*\n(.*?)\n```", re.DOTALL)
-KPI = re.compile(r"```\{=ppt-kpi\}[ \t]*\n(.*?)\n```", re.DOTALL)
-CARDGRID = re.compile(r"```\{=ppt-cards\}[ \t]*\n(.*?)\n```", re.DOTALL)
-FLOW = re.compile(r"```\{=ppt-flow\}[ \t]*\n(.*?)\n```", re.DOTALL)
-COMPARE = re.compile(r"```\{=ppt-compare\}[ \t]*\n(.*?)\n```", re.DOTALL)
+SOURCE_LINE = re.compile(r"^(?:(?:资料)?来源|source)[ \t]*[:：][ \t]*(\S.*)$", re.IGNORECASE)
 
 
 def p(tag: str) -> str:
@@ -77,17 +75,6 @@ def load_tokens() -> dict:
     return json.loads(TOKENS_PATH.read_text(encoding="utf-8"))["ppt"]
 
 
-def _slides(body: str) -> list[tuple[str, str]]:
-    headings = list(SLIDE_HEADING.finditer(body))
-    return [
-        (
-            match.group(1).strip(),
-            body[match.end() : headings[i + 1].start() if i + 1 < len(headings) else len(body)],
-        )
-        for i, match in enumerate(headings)
-    ]
-
-
 def _parse_rows_block(block: str) -> tuple[list[tuple[str, str]], str]:
     """Parse a `left | right` rows block with an optional trailing 来源/source line."""
     rows: list[tuple[str, str]] = []
@@ -96,8 +83,9 @@ def _parse_rows_block(block: str) -> tuple[list[tuple[str, str]], str]:
         stripped_line = line.strip()
         if not stripped_line:
             continue
-        if re.match(r"(?:资料)?来源\s*[:：]|source\s*[:：]", stripped_line, re.IGNORECASE):
-            source = re.sub(r"^(?:(?:资料)?来源|source)\s*[:：]\s*", "", stripped_line, flags=re.IGNORECASE)
+        source_match = SOURCE_LINE.match(stripped_line)
+        if source_match:
+            source = source_match.group(1)
         elif "|" in stripped_line:
             left, _, right = stripped_line.partition("|")
             if left.strip() and right.strip():
@@ -105,18 +93,48 @@ def _parse_rows_block(block: str) -> tuple[list[tuple[str, str]], str]:
     return rows, source
 
 
+def _parse_takeaway_block(block: str) -> tuple[str, str]:
+    text_lines: list[str] = []
+    source = ""
+    for line in block.splitlines():
+        stripped_line = line.strip()
+        if not stripped_line:
+            continue
+        source_match = SOURCE_LINE.match(stripped_line)
+        if source_match:
+            source = source_match.group(1)
+        else:
+            text_lines.append(stripped_line)
+    return "\n".join(text_lines), source
+
+
 def parse_cards(qmd_path: Path) -> dict[str, dict[str, list]]:
-    """Return {slide_title: {"takeaway": [str], "kpi": [(rows,src)], "cards": [(rows,src)]}}."""
+    """Return parsed card text/rows and their optional source captions by slide."""
     text = Path(qmd_path).read_text(encoding="utf-8")
     frontmatter = re.match(r"\A---\s*\n.*?\n---\s*\n", text, re.DOTALL)
     body = text[frontmatter.end() :] if frontmatter else text
     cards: dict[str, dict[str, list]] = {}
-    for title, content in _slides(body):
-        takeaways = [block.strip() for block in TAKEAWAY.findall(content) if block.strip()]
-        kpi_blocks = [parsed for block in KPI.findall(content) if (parsed := _parse_rows_block(block))[0]]
-        grid_blocks = [parsed for block in CARDGRID.findall(content) if (parsed := _parse_rows_block(block))[0]]
-        flow_blocks = [parsed for block in FLOW.findall(content) if (parsed := _parse_rows_block(block))[0]]
-        compare_blocks = [parsed for block in COMPARE.findall(content) if (parsed := _parse_rows_block(block))[0]]
+    for title, _, content in split_slides(body):
+        takeaways: list[tuple[str, str]] = []
+        row_blocks: dict[str, list[tuple[list[tuple[str, str]], str]]] = {
+            "kpi": [],
+            "cards": [],
+            "flow": [],
+            "compare": [],
+        }
+        for kind, block in extract_card_blocks(content):
+            if kind == "takeaway":
+                parsed_takeaway = _parse_takeaway_block(block)
+                if parsed_takeaway[0]:
+                    takeaways.append(parsed_takeaway)
+                continue
+            parsed = _parse_rows_block(block)
+            if parsed[0]:
+                row_blocks[kind].append(parsed)
+        kpi_blocks = row_blocks["kpi"]
+        grid_blocks = row_blocks["cards"]
+        flow_blocks = row_blocks["flow"]
+        compare_blocks = row_blocks["compare"]
         if takeaways or kpi_blocks or grid_blocks or flow_blocks or compare_blocks:
             cards[title] = {
                 "takeaway": takeaways,
@@ -189,7 +207,7 @@ def _textbox(shape_id: int, name: str, x: int, y: int, w: int, h: int, runs: str
     )
 
 
-def _takeaway_shapes(base_id: int, tokens: dict, fonts: dict, text: str) -> list[str]:
+def _takeaway_shapes(base_id: int, tokens: dict, fonts: dict, text: str, source: str = "") -> list[str]:
     width = round(tokens["canvas"]["width_in"] * EMU_PER_INCH)
     margin = round(0.42 * EMU_PER_INCH)
     height = round(0.52 * EMU_PER_INCH)
@@ -198,11 +216,33 @@ def _takeaway_shapes(base_id: int, tokens: dict, fonts: dict, text: str) -> list
     card_w = width - 2 * margin
     size = tokens["font_sizes_pt"]["key_claim"]
     run = _run(text, size, tokens["colors"]["text"], fonts["latin"], fonts["zh"], bold=False)
-    return [
+    shapes = [
         _rect(base_id, "takeaway-card", margin, y, card_w, height, tokens["colors"]["pale_red"].lstrip("#"), rounded=True),
         _rect(base_id + 1, "takeaway-bar", margin, y, bar_w, height, tokens["colors"]["primary"].lstrip("#")),
         _textbox(base_id + 2, "takeaway-text", margin + round(0.28 * EMU_PER_INCH), y, card_w - round(0.4 * EMU_PER_INCH), height, run, align="l"),
     ]
+    if source:
+        source_run = _run(
+            "来源：" + source,
+            tokens["font_sizes_pt"]["source_footnote"],
+            tokens["colors"]["secondary_text"],
+            fonts["latin"],
+            fonts["zh"],
+        )
+        shapes.append(
+            _textbox(
+                base_id + 3,
+                "takeaway-source",
+                margin,
+                y + height + round(0.03 * EMU_PER_INCH),
+                card_w,
+                round(0.23 * EMU_PER_INCH),
+                source_run,
+                align="l",
+                anchor="ctr",
+            )
+        )
+    return shapes
 
 
 def _kpi_shapes(base_id: int, tokens: dict, fonts: dict, rows: list[tuple[str, str]], source: str = "") -> list[str]:
@@ -388,9 +428,10 @@ def inject(pptx_path: Path, qmd_path: Path, font_profile: str | None = None) -> 
         for rows, source in spec.get("compare", []):
             new_shapes.extend(_compare_shapes(shape_id, tokens, fonts, rows, source))
             shape_id += len(rows) * 4 + 4
-        for text in spec["takeaway"]:
-            new_shapes.extend(_takeaway_shapes(shape_id, tokens, fonts, text))
-            shape_id += 3
+        for text, source in spec["takeaway"]:
+            takeaway_shapes = _takeaway_shapes(shape_id, tokens, fonts, text, source)
+            new_shapes.extend(takeaway_shapes)
+            shape_id += len(takeaway_shapes)
         for shape_xml in new_shapes:
             sp_tree.append(ET.fromstring(shape_xml))
         blobs[name] = ET.tostring(root, xml_declaration=True, encoding="UTF-8")
