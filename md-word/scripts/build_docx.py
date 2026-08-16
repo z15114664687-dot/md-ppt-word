@@ -14,6 +14,7 @@ from pathlib import Path
 from build_reference_docx import build as build_reference, load_word_tokens, pandoc_command
 from inspect_docx import inspect
 from postprocess_docx import postprocess
+from render_diagrams import render_mermaid_blocks
 from validate_markdown import IMAGE, validate
 
 
@@ -25,20 +26,29 @@ if str(SHARED_SCRIPTS) not in sys.path:
 from font_preflight import check_font_profile, font_environment  # noqa: E402
 
 
-def stage_source_with_png_figures(source: Path, tmpdir: Path, font_profile: str) -> Path:
+def stage_source_with_png_figures(
+    source: Path, tmpdir: Path, font_profile: str, text: str | None = None
+) -> Path:
     """Convert local SVG figures to PNG so every renderer (Word/LibreOffice) shows them.
 
     Pandoc 能把 SVG 原样嵌进 DOCX，但旧版 Word 和 LibreOffice 渲染不稳定，
     因此在进入 Pandoc 前统一栅格化为高分辨率 PNG。
+
+    text 由上游阶段（如 mermaid 渲染）传入时，相对图片路径仍按 source.parent 解析。
     """
-    text = source.read_text(encoding="utf-8")
+    prestaged = text is not None
+    text = source.read_text(encoding="utf-8") if text is None else text
     svg_resources = {
         resource
         for resource in IMAGE.findall(text)
         if resource.lower().endswith(".svg") and not re.match(r"https?://", resource)
     }
     if not svg_resources:
-        return source
+        if not prestaged:
+            return source
+        staged = tmpdir / source.name
+        staged.write_text(text, encoding="utf-8")
+        return staged
     for resource in sorted(svg_resources):
         svg_text = (source.parent / resource).read_text(encoding="utf-8")
         declared = re.search(r'data-font-profile=["\']([^"\']+)["\']', svg_text)
@@ -93,7 +103,13 @@ def build(source: Path, output: Path, font_profile: str = "preview", reference: 
         if reference is None:
             reference = tmpdir / "reference.docx"
             build_reference(reference, font_profile)
-        staged = stage_source_with_png_figures(source, tmpdir, font_profile)
+        # mermaid 流程图先按 tokens 主题渲成 PNG，再和普通图片一起进 Pandoc。
+        diagram_text, diagrams = render_mermaid_blocks(
+            source.read_text(encoding="utf-8"), tmpdir / "diagrams", "word", font_profile
+        )
+        staged = stage_source_with_png_figures(
+            source, tmpdir, font_profile, text=diagram_text if diagrams else None
+        )
         html = tmpdir / "report.html"
         draft = tmpdir / "report.docx"
         # -implicit_figures：题注按契约写在对象上方，不要 Pandoc 用 alt 文本在图下再生成一份。

@@ -22,7 +22,7 @@
 
 注意：Quarto 的 Homebrew cask 走 pkg 安装器、需要 sudo 密码；非交互环境可改用官方 tarball 解压到用户目录后把 `bin/quarto` 软链进 PATH（本仓库即此装法）。
 
-说明：Word 线只要 Pandoc 就够（脚本会在缺 Pandoc 时退回使用 Quarto 内置的 Pandoc，但不要求安装 Quarto）；PPT 线必须用 Quarto，因为要执行 QMD 里的代码块并按任务要求原生渲染 PPTX。
+说明：Word 线只要 Pandoc 就够（脚本会在缺 Pandoc 时退回使用 Quarto 内置的 Pandoc，但不要求安装 Quarto）——**例外：Markdown 里含 ```mermaid 流程图时需要 Quarto**，由它渲染成主题化 PNG；PPT 线必须用 Quarto，因为要执行 QMD 里的代码块并按任务要求原生渲染 PPTX。
 
 环境自检：
 

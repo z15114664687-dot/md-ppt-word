@@ -31,6 +31,19 @@
       "pale_red": "#FFF5F5",
       "border_red": "#F0D0D0"
     },
+    "diagram": {
+      "note": "mermaid 主题变量；fontFamily 由渲染时按 font_profiles 注入，不写死在这里",
+      "mermaid_theme": "base",
+      "mermaid_theme_variables": {
+        "primaryColor": "#FFF5F5",
+        "primaryBorderColor": "#B52116",
+        "primaryTextColor": "#333333",
+        "secondaryColor": "#F0D0D0",
+        "tertiaryColor": "#FFFFFF",
+        "lineColor": "#666666",
+        "textColor": "#333333"
+      }
+    },
     "font_sizes_note": "字号按研究报告/咨询风格的信息密度设定（2026-07-17 与用户确认），不继承培训稿的演讲级大字号；培训稿只贡献色彩与字体品牌层",
     "font_sizes_pt": {
       "closing": 36,
@@ -93,6 +106,19 @@
       "background": "#FFFFFF",
       "chart_grid": "#D9E2F3",
       "chart_series": ["#004A70", "#2F75B5", "#7F8C8D", "#5B9BD5", "#A5A5A5"]
+    },
+    "diagram": {
+      "note": "mermaid 主题变量；fontFamily 由渲染时按 font_profiles 注入，不写死在这里",
+      "mermaid_theme": "base",
+      "mermaid_theme_variables": {
+        "primaryColor": "#EAF1F6",
+        "primaryBorderColor": "#004A70",
+        "primaryTextColor": "#000000",
+        "secondaryColor": "#D9E2F3",
+        "tertiaryColor": "#FFFFFF",
+        "lineColor": "#7F8C8D",
+        "textColor": "#000000"
+      }
     },
     "font_sizes_pt": {"cover_title": 18, "heading_1": 14, "heading_2": 12, "body": 10.5, "caption": 9, "source_note": 7.5},
     "body_first_line_indent_chars": 2,

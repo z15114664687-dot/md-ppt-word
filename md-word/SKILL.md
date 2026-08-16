@@ -24,6 +24,7 @@ description: Use when the user needs structured research JSON, Markdown, or an a
 JSON（可选）→ 受约束 Markdown + SVG
 → Markdown/QMD
 → 语义与资源预检
+→ ```mermaid 流程图 → Quarto 渲染为主题化 PNG（无流程图时跳过）
 → Pandoc Markdown → HTML5 + MathML
 → Pandoc HTML → DOCX（reference.docx 按字体档位现场生成）
 → python-docx/OOXML 后处理：样式、中式章节编号、内容目录+图表目录、页眉页脚、表格和分页
@@ -34,6 +35,8 @@ JSON（可选）→ 受约束 Markdown + SVG
 目录与章节编号不在 Pandoc 阶段做（不用 `--toc`/`--number-sections`），统一由后处理完成，避免编号文本破坏样式匹配。
 
 HTML5 + MathML 中间层用于提高 LaTeX 公式转为 Word 原生 OMML 的稳定性。不能把 `$...$` 原样写进 Word，也不能把公式栅格化。
+
+流程示意图用 ```` ```mermaid ```` 块书写，由 `scripts/render_diagrams.py` 在进入 Pandoc 前渲染成 PNG，主题色取 tokens 的 `word.diagram`、字体按当前档位注入；只有 Markdown 里真的含 mermaid 块时才需要 Quarto。
 
 ## 版式规则
 

@@ -491,11 +491,171 @@ class InspectDocxTests(unittest.TestCase):
         self.assertIn("检测到禁止的可见品牌文字：国金证券", joined)
 
 
+MERMAID_MARKDOWN = """# 流程说明
+
+## 摘要
+
+说明测算流程。
+
+## 方法
+
+图表1：测算流程
+
+```mermaid
+flowchart LR
+  A[输入] --> B{校验}
+  B -->|通过| C[输出]
+  B -->|不通过| A
+```
+
+来源：作者绘制。
+
+## 回测
+
+图表2：回测指标
+
+| 指标 | 数值 |
+|---|---:|
+| 年化收益 | 10.2% |
+
+来源：模拟数据，仅作演示。
+
+## 结论
+
+流程可复现。
+
+# 附录
+
+参数口径。
+"""
+
+
+class DiagramTokenTests(unittest.TestCase):
+    def test_both_targets_define_mermaid_theme(self):
+        tokens = json.loads(TOKENS.read_text(encoding="utf-8"))
+        for target, border in (("word", "#004A70"), ("ppt", "#B52116")):
+            diagram = tokens[target]["diagram"]
+            variables = diagram["mermaid_theme_variables"]
+            self.assertEqual(diagram["mermaid_theme"], "base")
+            # 主题色必须来自该目标自己的品牌色板，不能是 mermaid 默认淡紫
+            self.assertEqual(variables["primaryBorderColor"], border)
+            self.assertNotIn("fontFamily", variables, "字体应在渲染时按档位注入，不写死在 tokens")
+
+    def test_init_directive_injects_palette_and_profile_font(self):
+        diagrams = load_module("render_diagrams")
+        tokens = diagrams.load_tokens("word")
+        directive = diagrams.init_directive(tokens, "word", "preview")
+        self.assertTrue(directive.startswith("%%{init:"))
+        self.assertIn("#004A70", directive)
+        self.assertIn("Noto Sans CJK SC", directive)
+
+        ppt_directive = diagrams.init_directive(diagrams.load_tokens("ppt"), "ppt", "delivery")
+        self.assertIn("#B52116", ppt_directive)
+        self.assertIn("MiSans", ppt_directive)
+
+    def test_render_is_noop_without_mermaid_blocks(self):
+        diagrams = load_module("render_diagrams")
+        with tempfile.TemporaryDirectory() as tmp:
+            text, rendered = diagrams.render_mermaid_blocks(
+                SAMPLE_MARKDOWN, Path(tmp), "word", "preview"
+            )
+        self.assertEqual(text, SAMPLE_MARKDOWN)
+        self.assertEqual(rendered, [])
+
+
+class ValidateMermaidTests(unittest.TestCase):
+    def test_mermaid_block_counts_as_exhibit_and_table_regex_ignores_edge_labels(self):
+        validator = load_module("validate_markdown")
+        with tempfile.TemporaryDirectory() as tmp:
+            path = Path(tmp) / "report.md"
+            path.write_text(MERMAID_MARKDOWN, encoding="utf-8")
+            result = validator.validate(path)
+        self.assertEqual(result["errors"], [])
+        self.assertEqual(result["diagrams"], 1)
+        # A -->|通过| C 不能被误判成 Markdown 表格行
+        self.assertEqual(result["tables"], 1)
+        self.assertEqual(result["exhibits"], 2)
+
+    def test_mermaid_block_requires_caption_and_source(self):
+        validator = load_module("validate_markdown")
+        # 流程图作为唯一展项且置于末尾：避免 360 字上下文窗口捞到别处的来源行
+        bare = """# 流程说明
+
+## 摘要
+
+说明测算流程。
+
+## 方法
+
+```mermaid
+flowchart LR
+  A[输入] --> B[输出]
+```
+
+## 回测
+
+无回测。
+
+## 结论
+
+流程可复现。
+
+# 附录
+
+参数口径。
+"""
+        with tempfile.TemporaryDirectory() as tmp:
+            path = Path(tmp) / "report.md"
+            path.write_text(bare, encoding="utf-8")
+            result = validator.validate(path)
+        joined = "\n".join(result["errors"])
+        self.assertIn("流程图缺少上方“图表N：”题注", joined)
+        self.assertIn("流程图缺少来源", joined)
+
+    def test_math_inside_code_fence_is_not_counted(self):
+        validator = load_module("validate_markdown")
+        # 代码块里的 $ 不会被 Pandoc 转成 OMML，计入会让 inspect_docx 误判
+        with_code = SAMPLE_MARKDOWN.replace(
+            "## 结论", "```text\n价格 $100 与 $200\n```\n\n## 结论"
+        )
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            (root / "chart.png").write_bytes(PNG_BYTES)
+            path = root / "report.md"
+            path.write_text(with_code, encoding="utf-8")
+            result = validator.validate(path)
+        self.assertEqual(result["math_expressions"], 2)
+        self.assertNotIn("公式分隔符不成对", "\n".join(result["errors"]))
+
+
 @unittest.skipUnless(
     shutil.which("pandoc") or shutil.which("quarto"),
     "需要 Pandoc（或 Quarto 内置 Pandoc）才能跑端到端转换",
 )
 class EndToEndBuildTests(unittest.TestCase):
+    @unittest.skipUnless(shutil.which("quarto"), "mermaid 渲染需要 Quarto")
+    def test_build_docx_embeds_rendered_mermaid_diagram(self):
+        builder = load_module("build_docx")
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            source = root / "report.md"
+            source.write_text(MERMAID_MARKDOWN, encoding="utf-8")
+            output = root / "report.docx"
+            result = builder.build(source, output)
+            self.assertEqual(result["inspection"]["errors"], [])
+            with ZipFile(output) as archive:
+                media = [n for n in archive.namelist() if n.startswith("word/media/")]
+            doc = Document(output)
+            texts = [p.text for p in doc.paragraphs]
+            drawings = [p for p in doc.paragraphs if p._p.xpath(".//w:drawing")]
+        # 流程图必须以图片形式落进 DOCX，且题注/来源保持契约位置
+        self.assertEqual(len(media), 1)
+        self.assertEqual(len(drawings), 1)
+        self.assertIn("图表1：测算流程", texts)
+        self.assertIn("来源：作者绘制。", texts)
+        # 源码不得以文本形式残留
+        self.assertFalse(any("flowchart" in t for t in texts))
+
     def test_build_docx_from_sample_markdown(self):
         builder = load_module("build_docx")
         renderer = load_module("render_docx_preview")

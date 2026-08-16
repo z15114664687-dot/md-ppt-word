@@ -12,6 +12,9 @@ from pathlib import Path
 IMAGE = re.compile(r"!\[[^\]]*\]\(([^)\s]+)(?:\s+[^)]*)?\)")
 TABLE = re.compile(r"(?m)(?:^\s*\|.*\|\s*\n){2,}")
 SOURCE = re.compile(r"(?:资料)?来源\s*[：:]")
+# 流程图：```mermaid 块，交付前由 render_diagrams 渲染成 PNG，视同一个图表对象。
+MERMAID = re.compile(r"(?ms)^```[ \t]*mermaid[ \t]*\n.*?^```[ \t]*$")
+CODE_FENCE = re.compile(r"(?ms)^```.*?^```[ \t]*$")
 # 国金参考稿：图和表共用一套 "图表N：题" 编号，全角冒号。
 EXHIBIT_TITLE = re.compile(r"(?m)^图表\s*(\d+)\s*：\s*.+$")
 # 旧式分开编号（图 1 / 表 1）或半角冒号，一律要求改写。
@@ -29,9 +32,16 @@ def _math_counts(text: str) -> tuple[int, bool]:
     return len(displays) + len(inlines), display_unbalanced or inline_unbalanced
 
 
+def _mask_code_fences(text: str) -> str:
+    """Blank out fenced code content, preserving offsets so context windows stay valid."""
+    return CODE_FENCE.sub(lambda m: re.sub(r"[^\n]", " ", m.group(0)), text)
+
+
 def validate(path: Path) -> dict[str, object]:
     path = Path(path)
     text = path.read_text(encoding="utf-8")
+    # 表格检测必须避开代码块：mermaid 的 A -->|标签| B 之类会误判成表格行。
+    text_outside_code = _mask_code_fences(text)
     errors: list[str] = []
     warnings: list[str] = []
 
@@ -40,7 +50,8 @@ def validate(path: Path) -> dict[str, object]:
         if not any(heading == required or heading.startswith(required + " ") for heading in headings):
             errors.append(f"缺少必需章节：{required}")
 
-    math_expressions, unbalanced = _math_counts(text)
+    # 代码块内的 $ 不会被 Pandoc 转成 OMML，计入会让 inspect_docx 的公式门槛误判。
+    math_expressions, unbalanced = _math_counts(text_outside_code)
     if unbalanced:
         errors.append("公式分隔符不成对")
     if re.search(r"\\(?:newcommand|renewcommand|begin\{align\*?\}|tag)\b", text):
@@ -65,7 +76,7 @@ def validate(path: Path) -> dict[str, object]:
         if not SOURCE.search(after):
             errors.append(f"图片缺少来源：{resource}")
 
-    for index, match in enumerate(TABLE.finditer(text), 1):
+    for index, match in enumerate(TABLE.finditer(text_outside_code), 1):
         before = text[max(0, match.start() - 240) : match.start()]
         after = text[match.end() : min(len(text), match.end() + 360)]
         if not EXHIBIT_TITLE.search(before):
@@ -73,16 +84,27 @@ def validate(path: Path) -> dict[str, object]:
         if not SOURCE.search(after):
             errors.append(f"第 {index} 个表格缺少来源")
 
+    for index, match in enumerate(MERMAID.finditer(text), 1):
+        before = text[max(0, match.start() - 240) : match.start()]
+        after = text[match.end() : min(len(text), match.end() + 360)]
+        if not EXHIBIT_TITLE.search(before):
+            errors.append(f"第 {index} 个流程图缺少上方“图表N：”题注")
+        if not SOURCE.search(after):
+            errors.append(f"第 {index} 个流程图缺少来源")
+
     images = len(IMAGE.findall(text))
-    tables = len(TABLE.findall(text))
-    if exhibit_numbers and len(exhibit_numbers) != images + tables:
-        warnings.append(f"题注数（{len(exhibit_numbers)}）与图表对象数（{images + tables}）不一致，请检查是否有孤立题注")
+    tables = len(TABLE.findall(text_outside_code))
+    diagrams = len(MERMAID.findall(text))
+    exhibit_objects = images + tables + diagrams
+    if exhibit_numbers and len(exhibit_numbers) != exhibit_objects:
+        warnings.append(f"题注数（{len(exhibit_numbers)}）与图表对象数（{exhibit_objects}）不一致，请检查是否有孤立题注")
 
     return {
         "path": str(path),
         "headings": len(headings),
         "images": images,
         "tables": tables,
+        "diagrams": diagrams,
         "exhibits": len(exhibit_numbers),
         "math_expressions": math_expressions,
         "errors": errors,

@@ -59,6 +59,25 @@ format:
 - 表格放在栏内可正常渲染（继承母版表样式），纯文字页（段落+列表+来源）可不用 columns。
 - **正文里不要用 LaTeX 公式**：PPTX 中的 OMML 数学会让 LibreOffice 把整个文本框渲染丢弃（内容还在 XML 里但预览不可见），真实放映环境兼容性也无保证。演示文稿中的公式改为文字表述；确需展示公式时先渲染成 PNG 图片。
 
+## 流程图
+
+Quarto 原生支持 mermaid，PPT 线直接写 ```` ```{mermaid} ```` 可执行块即可（注意是花括号形式；md-word 线因为走 Pandoc，用的是普通 ```` ```mermaid ````）。
+
+流程图属于展项，受上面的版式硬约束管辖：**必须放进 `.columns` 的某一栏**，来源行写在栏内，否则会独占一页并把来源挤到延续页。
+
+配色不会自动继承母版，需在图内用 `%%{init}%%` 指令注入 `design-tokens.json` 的 `ppt.diagram.mermaid_theme_variables`（红系），字体用当前档位的 `zh`：
+
+````markdown
+::: {.column width="62%"}
+```{mermaid}
+%%{init: {"theme":"base","themeVariables":{"primaryColor":"#FFF5F5","primaryBorderColor":"#B52116","lineColor":"#666666","fontFamily":"MiSans"}}}%%
+flowchart LR
+  A[数据采集] --> B[因子构建]
+  B --> C[组合回测]
+```
+:::
+````
+
 ## 卡片注入（突破占位符天花板）
 
 Quarto/Pandoc 只会填占位符版式，做不了高密度卡片。`inject_cards.py`（在 `render_qmd_ppt.py` 里 quarto 渲染后自动运行）读下面这些 **raw block**（Pandoc 对 pptx 目标会丢弃它们，所以不会重复），按 `##` 页标题匹配，往对应页追加**原生、仍可编辑**的 shape。用于封面数字、结论、要点这类 Quarto 做得寡淡的地方；数据图表页照旧用 Quarto 原生渲染（真图表、可编辑）。
